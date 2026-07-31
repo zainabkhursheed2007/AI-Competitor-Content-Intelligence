@@ -1,0 +1,641 @@
+{
+  "name": "AI Competitor Content Intelligence",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -208,
+        -80
+      ],
+      "id": "0b8424ce-cad4-4f4c-91e3-98475096ddcd",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "url": "https://blog.hubspot.com/marketing/rss.xml",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        48
+      ],
+      "id": "e32ec55b-87dd-49bd-a87d-ea10a70e52b0",
+      "name": "Read Blog RSS"
+    },
+    {
+      "parameters": {
+        "url": "https://www.youtube.com/feeds/videos.xml?channel_id=UC_x5XG1OV2P6uZZ5FSM9Ttw",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        -192
+      ],
+      "id": "822d10bd-cff1-4c3f-8553-865f06ba15a3",
+      "name": "Read YouTube RSS"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        224,
+        -80
+      ],
+      "id": "1d2167c2-73db-4350-840e-5c8792d98dac",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map((item) => {\n  const data = item.json;\n\n  const isYouTube =\n    String(data.id || '').startsWith('yt:video:') ||\n    String(data.link || '').includes('youtube.com');\n\n  const rawContent =\n    data['content:encodedSnippet'] ||\n    data.contentSnippet ||\n    data.description ||\n    data.content ||\n    data.title ||\n    '';\n\n  const cleanContent = String(rawContent)\n    .replace(/<[^>]*>/g, ' ')\n    .replace(/&nbsp;/gi, ' ')\n    .replace(/&amp;/gi, '&')\n    .replace(/&#39;/gi, \"'\")\n    .replace(/&quot;/gi, '\"')\n    .replace(/\\s+/g, ' ')\n    .trim()\n    .slice(0, 2000);\n\n  return {\n    json: {\n      title: data.title || 'Untitled',\n\n      link: data.link || '',\n\n      published_date:\n        data.isoDate ||\n        data.pubDate ||\n        data.date ||\n        new Date().toISOString(),\n\n      source: isYouTube\n        ? `YouTube - ${data.author || 'Unknown Channel'}`\n        : `Blog - ${data.creator || data['dc:creator'] || 'HubSpot'}`,\n\n      source_type: isYouTube ? 'YouTube' : 'Blog',\n\n      content: cleanContent,\n\n      unique_key:\n        data.link ||\n        data.id ||\n        `${data.title || ''}-${data.pubDate || data.date || ''}`\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        432,
+        -80
+      ],
+      "id": "e523af5b-69cf-408e-bfcd-f6692acc2fd5",
+      "name": "Clean and Normalize Content"
+    },
+    {
+      "parameters": {
+        "jsCode": "const seen = new Set();\nconst uniqueItems = [];\n\nfor (const item of items) {\n  const key = String(\n    item.json.unique_key ||\n    item.json.link ||\n    item.json.title ||\n    ''\n  )\n    .toLowerCase()\n    .trim();\n\n  if (!key) {\n    continue;\n  }\n\n  if (seen.has(key)) {\n    continue;\n  }\n\n  seen.add(key);\n  uniqueItems.push(item);\n}\n\nreturn uniqueItems.slice(0, 5);"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        656,
+        -80
+      ],
+      "id": "e28db64f-9765-4432-896c-a1bf73148c49",
+      "name": "Remove Duplicate Entries"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        880,
+        -80
+      ],
+      "id": "88694b25-92f0-4898-8e8a-7efb2359e162",
+      "name": "Loop Content"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Analyze the following competitor content.\n\nTitle:\n{{ $json.title }}\n\nSource:\n{{ $json.source }}\n\nContent:\n{{ $json.content }}\n\nGenerate:\n- A short summary\n- Target audience\n- Category\n- Three key topics\n- Trend score from 0 to 100\n- One new content idea",
+        "hasOutputParser": true,
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        1312,
+        48
+      ],
+      "id": "ba923f8d-3df8-4b65-93f1-be448fbbd99b",
+      "name": "Basic LLM Chain",
+      "retryOnFail": true,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "model": "llama-3.1-8b-instant",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        1344,
+        288
+      ],
+      "id": "fb99e545-810f-4a19-be9b-8c26d4176fd7",
+      "name": "Groq Chat Model",
+      "credentials": {
+        "groqApi": {
+          "id": "vxyZIQgAU7NmH6Yh",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"summary\": {\n      \"type\": \"string\"\n    },\n    \"target_audience\": {\n      \"type\": \"string\"\n    },\n    \"category\": {\n      \"type\": \"string\"\n    },\n    \"key_topics\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"string\"\n      }\n    },\n    \"trend_score\": {\n      \"type\": \"number\",\n      \"minimum\": 0,\n      \"maximum\": 100\n    },\n    \"content_idea\": {\n      \"type\": \"string\"\n    }\n  },\n  \"required\": [\n    \"summary\",\n    \"target_audience\",\n    \"category\",\n    \"key_topics\",\n    \"trend_score\",\n    \"content_idea\"\n  ]\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        1504,
+        304
+      ],
+      "id": "e7d1d7dd-cd20-4a6d-887b-6bd565a645c2",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "authentication": "airtableOAuth2Api",
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "appZfNauiEEsBqgHj",
+          "mode": "list",
+          "cachedResultName": "Competitor Content Intelligence",
+          "cachedResultUrl": "https://airtable.com/appZfNauiEEsBqgHj"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tbl3DYfLf8eNojD2J",
+          "mode": "list",
+          "cachedResultName": "Content Analysis",
+          "cachedResultUrl": "https://airtable.com/appZfNauiEEsBqgHj/tbl3DYfLf8eNojD2J"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Source": "={{ $('Loop Content').item.json.source }}",
+            "Link": "={{ $('Loop Content').item.json.link }}",
+            "Summary": "={{$json.output.summary}}",
+            "Target Audience": "={{$json.output.target_audience}}",
+            "Category": "={{$json.output.category}}",
+            "Key Topics": "={{ $json.output.key_topics.join(\", \") }}",
+            "Trend Score": "={{$json.output.trend_score}}",
+            "Content Ideas": "={{$json.output.content_idea}}",
+            "Status": "Processed",
+            "Title": "={{ $('Loop Content').item.json.title }}",
+            "Published Date": "={{ DateTime.fromISO($('Loop Content').item.json.published_date).toISO() }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Title",
+              "displayName": "Title",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Source",
+              "displayName": "Source",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Link",
+              "displayName": "Link",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Published Date",
+              "displayName": "Published Date",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Summary",
+              "displayName": "Summary",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Target Audience",
+              "displayName": "Target Audience",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Category",
+              "displayName": "Category",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Key Topics",
+              "displayName": "Key Topics",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Trend Score",
+              "displayName": "Trend Score",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Content Ideas",
+              "displayName": "Content Ideas",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "New",
+                  "value": "New"
+                },
+                {
+                  "name": "Processed",
+                  "value": "Processed"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Attachment Summary",
+              "displayName": "Attachment Summary",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.2,
+      "position": [
+        1728,
+        -304
+      ],
+      "id": "ebe4f1dc-e1f8-4f8c-8673-022ba5179767",
+      "name": "Create a record",
+      "credentials": {
+        "airtableOAuth2Api": {
+          "id": "2Hn5wyJdNa1pWh2L",
+          "name": "Airtable account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 10
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1136,
+        32
+      ],
+      "id": "a6912f2e-5483-4cfa-965b-4df6da3e1f93",
+      "name": "Wait",
+      "webhookId": "52de240e-2c9f-405b-a068-0ca802366f60"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "e4a0c0b0-437f-4096-8aa4-5a221b4e59b3",
+              "leftValue": "={{ $json.fields[\"Trend Score\"] }}",
+              "rightValue": 40,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1968,
+        -368
+      ],
+      "id": "a593d2e5-2624-476f-a890-ab8a8bff7ef8",
+      "name": "Check High Trend"
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "guildId": {
+          "__rl": true,
+          "value": "1523671523397865482",
+          "mode": "list",
+          "cachedResultName": "AI Lead Qualification",
+          "cachedResultUrl": "https://discord.com/channels/1523671523397865482"
+        },
+        "channelId": {
+          "__rl": true,
+          "value": "1523671523997646860",
+          "mode": "list",
+          "cachedResultName": "general",
+          "cachedResultUrl": "https://discord.com/channels/1523671523397865482/1523671523997646860"
+        },
+        "content": "=🔥 High-Trending Competitor Content\n\n📝 Title:\n{{ $json.fields.Title }}\n\n📂 Category:\n{{ $json.fields.Category }}\n\n📊 Trend Score:\n{{ $json.fields[\"Trend Score\"] }}/100\n\n🎯 Target Audience:\n{{ $json.fields[\"Target Audience\"] }}\n\n🔑 Key Topics:\n{{ $json.fields[\"Key Topics\"] }}\n\n💡 Suggested Content Idea:\n{{ $json.fields[\"Content Ideas\"] }}\n\n🔗 Link:\n{{ $json.fields.Link }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        2160,
+        -496
+      ],
+      "id": "5e1400b1-4eb3-4e23-88d7-ea53d64a9554",
+      "name": "Send High Trend Alert",
+      "webhookId": "e2a58a67-4aea-4628-ac75-1b30d8803830",
+      "credentials": {
+        "discordBotApi": {
+          "id": "RuKxbAkoplY71PSX",
+          "name": "Discord Bot account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "zainabnaseer1429@gmail.com",
+        "subject": "📊 Daily AI Competitor Content Intelligence Report",
+        "message": "=<h2>📊 Daily Competitor Content Intelligence Report</h2>  <p>Hello,</p>  <p>Your daily AI-powered competitor content analysis has been completed successfully.</p>  <hr>  <h3>✅ Workflow Summary</h3>  <ul>   <li><strong>Total Content Processed:</strong> {{ $('Remove Duplicate Entries').all().length }}</li>   <li><strong>Sources Analyzed:</strong> Competitor Blogs & YouTube RSS Feeds</li>   <li><strong>AI Processing:</strong> Completed using Groq AI</li>   <li><strong>Database:</strong> All records saved to Airtable</li>   <li><strong>Notifications:</strong> High-trending content sent to Discord</li> </ul>  <hr>  <h3>🤖 AI Analysis Included</h3>  <ul>   <li>📝 Content Summary</li>   <li>🎯 Target Audience Detection</li>   <li>📂 Category Classification</li>   <li>🔑 Key Topic Extraction</li>   <li>📈 Trend Score Evaluation</li>   <li>💡 New Content Idea Suggestions</li> </ul>  <hr>  <p><strong>Report Generated:</strong> {{ $now.toFormat('dd LLL yyyy - hh:mm a') }}</p>  <p>Thank you for using the <strong>AI Competitor Content Intelligence</strong> workflow.</p>  <p>🚀 Have a productive day!</p>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1152,
+        -304
+      ],
+      "id": "1bcf4dac-5b45-4b28-98e4-d5a1363db84b",
+      "name": "Send a message",
+      "webhookId": "c73c733c-ab78-44ab-9acb-770327e18c82",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "4d9yQ8paC7YlSVcF",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Blog RSS",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Read YouTube RSS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read YouTube RSS": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Blog RSS": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Clean and Normalize Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean and Normalize Content": {
+      "main": [
+        [
+          {
+            "node": "Remove Duplicate Entries",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remove Duplicate Entries": {
+      "main": [
+        [
+          {
+            "node": "Loop Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Content": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Loop Content",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Create a record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create a record": {
+      "main": [
+        [
+          {
+            "node": "Loop Content",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check High Trend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check High Trend": {
+      "main": [
+        [
+          {
+            "node": "Send High Trend Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "2d1e7f88-748c-4219-a582-c96f30a49e30",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "2dfa35f3042543190180a867ec380330e25b93a072ccfe4be80e7370106aca16"
+  },
+  "nodeGroups": [],
+  "id": "iNKTFjwqxGX8AI0Z",
+  "tags": []
+}
